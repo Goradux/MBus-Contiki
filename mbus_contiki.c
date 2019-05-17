@@ -89,6 +89,63 @@ typedef struct _mbus_serial_data
 
 
 
+
+
+
+int
+mbus_serial_send_frame(mbus_handle *handle, mbus_frame *frame)
+{
+    unsigned char buff[PACKET_BUFF_SIZE];
+    int len, ret;
+
+    if (handle == NULL || frame == NULL)
+    {
+        return -1;
+    }
+
+    // Make sure serial connection is open
+    if (isatty(handle->fd) == 0)
+    {
+        return -1;
+    }
+    // ^^^^^^ instead of this use some sort of RS232_PORT_1 check
+    // isatty() is a standard function btw
+
+
+
+    if ((len = mbus_frame_pack(frame, buff, sizeof(buff))) == -1)
+    {
+        printf("mbus_frame_pack failed\n");
+        return -1;
+    }
+
+    if ((ret = write(handle->fd, buff, len)) == len)
+    // write is unistd.h stuff
+    {
+        //
+        // call the send event function, if the callback function is registered
+        //
+        if (handle->send_event)
+                handle->send_event(MBUS_HANDLE_TYPE_SERIAL, buff, len);
+    }
+    else
+    {
+        printf("Failed to write frame to socket.\n");
+        return -1;
+    }
+
+    //
+    // wait until complete frame has been transmitted
+    //
+    tcdrain(handle->fd);
+    // ^^^^^ termios stuff
+
+    return 0;
+}
+//^^^^^^^^^^^^^^^^^^^ change this function
+//check mbus_frame_pack
+
+
 mbus_handle * mbus_context_serial(const char *device) {
   //mbus_handle * mbus_context_serial(const int *device) {
   mbus_handle *handle;
@@ -309,6 +366,16 @@ int mbus_frame_free(mbus_frame *frame) {
 //---------------------------------------------------------
 int mbus_is_primary_address(int value) {
     return ((value >= 0x00) && (value <= 0xFF));
+}
+
+int mbus_send_frame(mbus_handle * handle, mbus_frame *frame) {
+    if (handle == NULL)
+    {
+        MBUS_ERROR("%s: Invalid M-Bus handle for send.\n", __PRETTY_FUNCTION__);
+        return 0;
+    }
+    return handle->send(handle, frame);
+    // ^^^ find out this send()
 }
 //------------------------------------------------------------------------------
 // send a data request packet to from master to slave and optional purge response
