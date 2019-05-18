@@ -1,6 +1,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
-//#include <fcntl.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -9,6 +9,24 @@
 
 #include <time.h>
 #include <stdlib.h>
+
+#include <termios.h>
+
+
+
+
+
+#include <unistd.h>
+#include <fcntl.h>
+
+#include <sys/types.h>
+
+#include <stdio.h>
+#include <strings.h>
+
+#include <termios.h>
+#include <errno.h>
+#include <string.h>
 
 
 
@@ -116,7 +134,7 @@ typedef struct _mbus_serial_handle {
     int fd;
     // ^^^ comment out later
 
-    //struct termios t;
+    struct termios t;
     // ^^^ baudrate
 
 } mbus_serial_handle;
@@ -149,11 +167,25 @@ mbus_serial_connect(char *device)
     handle->device = device;
 
     // Use blocking read and handle it by serial port VMIN/VTIME setting
-    // if ((handle->fd = open(handle->device, O_RDWR | O_NOCTTY)) < 0)
-    // {
-    //     fprintf(stderr, "%s: failed to open tty.", __PRETTY_FUNCTION__);
-    //     return NULL;
-    // }
+    if ((handle->fd = open(handle->device, O_RDWR | O_NOCTTY)) < 0)
+    {
+        printf("failed to open tty.\n");
+        return NULL;
+    }
+
+    memset(&(handle->t), 0, sizeof(handle->t));
+    handle->t.c_cflag |= (CS8|CREAD|CLOCAL);
+    handle->t.c_cflag |= PARENB;
+
+    // No received data still OK
+    handle->t.c_cc[VMIN]  = 0;
+
+    handle->t.c_cc[VTIME] = 2; // Timeout in 1/10 sec
+
+    cfsetispeed(&(handle->t), B9600);
+    cfsetospeed(&(handle->t), B9600);
+
+    tcsetattr(handle->fd, TCSANOW, &(handle->t));
 
     return handle;
 }
@@ -364,7 +396,7 @@ mbus_serial_send_frame(mbus_serial_handle *handle, mbus_frame *frame)
     //
     // wait until complete frame has been transmitted
     //
-    //tcdrain(handle->fd);
+    tcdrain(handle->fd);
     // ^^^ add sleep???
 
     return 0;
@@ -611,6 +643,7 @@ mbus_parse(mbus_frame *frame, u_char *data, size_t data_size)
 
     }
 
+
     printf("Got null pointer to frame, data or zero data_size.\n");
 
     return -1;
@@ -647,6 +680,7 @@ mbus_serial_recv_frame(mbus_serial_handle *handle, mbus_frame *frame)
         if ((nread = read(handle->fd, &buff[len], remaining)) == -1)
         // ^^^ use our read
         {
+            printf("-1!\n");
             return -1;
         }
 
@@ -661,7 +695,6 @@ mbus_serial_recv_frame(mbus_serial_handle *handle, mbus_frame *frame)
                 break;
             }
         }
-
         len += nread;
 
     } while ((remaining = mbus_parse(frame, buff, len)) > 0);
@@ -773,7 +806,60 @@ mbus_disconnect(mbus_handle * handle)
 
 
 
+int
+mbus_serial_set_baudrate(mbus_serial_handle *handle, int baudrate)
+{
+    speed_t speed;
 
+    if (handle == NULL)
+        return -1;
+
+    switch (baudrate)
+    {
+        case 300:
+            speed = B300;
+            handle->t.c_cc[VTIME] = 12; // Timeout in 1/10 sec
+            break;
+
+        case 1200:
+            speed = B1200;
+            handle->t.c_cc[VTIME] = 4;  // Timeout in 1/10 sec
+            break;
+
+        case 2400:
+            speed = B2400;
+            handle->t.c_cc[VTIME] = 2;  // Timeout in 1/10 sec
+            break;
+
+        case 9600:
+            speed = B9600;
+            handle->t.c_cc[VTIME] = 1;  // Timeout in 1/10 sec
+            break;
+
+       default:
+            return -1; // unsupported baudrate
+    }
+
+    // Set input baud rate
+    if (cfsetispeed(&(handle->t), speed) != 0)
+    {
+        return -1;
+    }
+
+    // Set output baud rate
+    if (cfsetospeed(&(handle->t), speed) != 0)
+    {
+        return -1;
+    }
+
+    // Change baud rate immediately
+    if (tcsetattr(handle->fd, TCSANOW, &(handle->t)) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
 
 
 
@@ -809,9 +895,9 @@ mbus_frame_type(mbus_frame *frame)
 
 
 
-int contiki_mbus_serial_scan() {
+int contiki_mbus_serial_scan(char * input) {
   mbus_handle *handle;
-  char *device;
+  char *device = input;
   // int *device;
   // ^^^ RS232_PORT_1
   int address = 67;
@@ -824,6 +910,11 @@ int contiki_mbus_serial_scan() {
       return 1;
   }
 
+  if (mbus_serial_set_baudrate(handle->m_serial_handle, baudrate) == -1)
+    {
+        printf("Failed to set baud rate.\n");
+        return 1;
+    }
 
 
   mbus_frame reply;
@@ -871,6 +962,7 @@ int contiki_mbus_serial_scan() {
 }
 
 int main(int argc, char **argv) {
-  contiki_mbus_serial_scan();
+  char *input = argv[1];
+  contiki_mbus_serial_scan(input);
   return 0;
 }
