@@ -866,6 +866,56 @@ mbus_serial_set_baudrate(mbus_serial_handle *handle, int baudrate)
 
 
 
+void
+mbus_hex_dump(const char *label, const char *buff, size_t len)
+{
+    size_t i;
+
+    if (label == NULL || buff == NULL)
+        return;
+
+    printf("%s (%03ld):", label, len);
+
+    for (i = 0; i < len; i++)
+    {
+       printf(" %02X", (u_char) buff[i]);
+    }
+    printf("\n");
+
+}
+
+//
+//  trace callbacks
+//
+void
+mbus_dump_recv_event(u_char src_type, const char *buff, size_t len)
+{
+    mbus_hex_dump("RECV", buff, len);
+}
+
+void
+mbus_dump_send_event(u_char src_type, const char *buff, size_t len)
+{
+    mbus_hex_dump("SEND", buff, len);
+}
+
+//------------------------------------------------------------------------------
+/// Register a function for receive events.
+//------------------------------------------------------------------------------
+void
+mbus_register_recv_event(void (*event)(u_char src_type, const char *buff, size_t len))
+{
+    _mbus_recv_event = event;
+}
+
+//------------------------------------------------------------------------------
+/// Register a function for send events.
+//------------------------------------------------------------------------------
+void
+mbus_register_send_event(void (*event)(u_char src_type, const char *buff, size_t len))
+{
+    _mbus_send_event = event;
+}
 
 
 
@@ -903,6 +953,9 @@ int contiki_mbus_serial_scan(char * input) {
   int address = 67;
   int baudrate = 9600;
   int ret;
+
+  mbus_register_send_event(&mbus_dump_send_event);
+  mbus_register_recv_event(&mbus_dump_recv_event);
 
   if ((handle = mbus_connect_serial(device)) == NULL)
   {
@@ -943,10 +996,11 @@ int contiki_mbus_serial_scan(char * input) {
   if (mbus_frame_type(&reply) == MBUS_FRAME_TYPE_ACK)
   {
       /* check for more data (collision) */
-      while (mbus_recv_frame(handle, &reply) != -1)
-      {
-          ret = -2;
-      }
+      // while (mbus_recv_frame(handle, &reply) != -1)
+      // {
+      //     ret = -2;
+      // }
+      printf("\n");
 
       if (ret == -2)
       {
