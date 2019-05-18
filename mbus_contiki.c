@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #define MBUS_FRAME_PURGE_S2M  2
 #define MBUS_FRAME_PURGE_M2S  1
@@ -89,23 +90,169 @@ typedef struct _mbus_serial_data
 
 
 
+//------------------------------------------------------------------------------
+/// Pack the M-bus frame into a binary string representation that can be sent
+/// on the bus. The binary packet format is different for the different types
+/// of M-bus frames.
+//------------------------------------------------------------------------------
+int mbus_frame_pack(mbus_frame *frame, unsigned char *data, size_t data_size) {
+    size_t i, offset = 0;
+
+    if (frame && data)
+    {
+        if (mbus_frame_calc_length(frame) == -1)
+        {
+            return -2;
+        }
+
+        if (mbus_frame_calc_checksum(frame) == -1)
+        {
+            return -3;
+        }
+
+        switch (frame->type)
+        {
+            case MBUS_FRAME_TYPE_ACK:
+
+                if (data_size < MBUS_FRAME_ACK_BASE_SIZE)
+                {
+                    return -4;
+                }
+
+                data[offset++] = frame->start1;
+
+                return offset;
+
+            case MBUS_FRAME_TYPE_SHORT:
+
+                if (data_size < MBUS_FRAME_SHORT_BASE_SIZE)
+                {
+                    return -4;
+                }
+
+                data[offset++] = frame->start1;
+                data[offset++] = frame->control;
+                data[offset++] = frame->address;
+                data[offset++] = frame->checksum;
+                data[offset++] = frame->stop;
+
+                return offset;
+
+            case MBUS_FRAME_TYPE_CONTROL:
+
+                if (data_size < MBUS_FRAME_CONTROL_BASE_SIZE)
+                {
+                    return -4;
+                }
+
+                data[offset++] = frame->start1;
+                data[offset++] = frame->length1;
+                data[offset++] = frame->length2;
+                data[offset++] = frame->start2;
+
+                data[offset++] = frame->control;
+                data[offset++] = frame->address;
+                data[offset++] = frame->control_information;
+
+                data[offset++] = frame->checksum;
+                data[offset++] = frame->stop;
+
+                return offset;
+
+            case MBUS_FRAME_TYPE_LONG:
+
+                if (data_size < frame->data_size + MBUS_FRAME_LONG_BASE_SIZE)
+                {
+                    return -4;
+                }
+
+                data[offset++] = frame->start1;
+                data[offset++] = frame->length1;
+                data[offset++] = frame->length2;
+                data[offset++] = frame->start2;
+
+                data[offset++] = frame->control;
+                data[offset++] = frame->address;
+                data[offset++] = frame->control_information;
+
+                for (i = 0; i < frame->data_size; i++)
+                {
+                    data[offset++] = frame->data[i];
+                }
+
+                data[offset++] = frame->checksum;
+                data[offset++] = frame->stop;
+
+                return offset;
+
+            default:
+                return -5;
+        }
+    }
+
+    return -1;
+}
+
 
 
 
 int
-mbus_serial_send_frame(mbus_handle *handle, mbus_frame *frame)
+mbus_serial_connect(mbus_handle *handle)
 {
+    mbus_serial_data *serial_data;
+    const char *device;
+    struct termios *term;
+
+    if (handle == NULL)
+        return -1;
+
+    serial_data = (mbus_serial_data *) handle->auxdata;
+    if (serial_data == NULL || serial_data->device == NULL)
+        return -1;
+
+    device = serial_data->device;
+    term = &(serial_data->t);
+    //
+    // create the SERIAL connection
+    //
+
+    // Use blocking read and handle it by serial port VMIN/VTIME setting
+    if ((handle->fd = open(device, O_RDWR | O_NOCTTY)) < 0)
+    // ^^^^^ RS232_PORT_1
+    {
+        fprintf(stderr, "%s: failed to open tty.", __PRETTY_FUNCTION__);
+        return -1;
+    }
+
+    //memset(term, 0, sizeof(*term));
+    // term->c_cflag |= (CS8|CREAD|CLOCAL);
+    // term->c_cflag |= PARENB;
+    //
+    // // No received data still OK
+    // term->c_cc[VMIN] = (cc_t) 0;
+    // term->c_cc[VTIME] = (cc_t) 3; // Timeout in 1/10 sec
+
+    //cfsetispeed(term, B2400);
+    //cfsetospeed(term, B2400);
+    // ^^^^^ Baudrate stuff
+
+    //tcsetattr(handle->fd, TCSANOW, term);
+
+    return 0;
+}
+
+
+
+int mbus_serial_send_frame(mbus_handle *handle, mbus_frame *frame) {
     unsigned char buff[PACKET_BUFF_SIZE];
     int len, ret;
 
-    if (handle == NULL || frame == NULL)
-    {
+    if (handle == NULL || frame == NULL) {
         return -1;
     }
 
     // Make sure serial connection is open
-    if (isatty(handle->fd) == 0)
-    {
+    if (isatty(handle->fd) == 0) {
         return -1;
     }
     // ^^^^^^ instead of this use some sort of RS232_PORT_1 check
@@ -138,7 +285,7 @@ mbus_serial_send_frame(mbus_handle *handle, mbus_frame *frame)
     // wait until complete frame has been transmitted
     //
     tcdrain(handle->fd);
-    // ^^^^^ termios stuff
+    // ^^^^^ termios.h stuff
 
     return 0;
 }
@@ -371,7 +518,7 @@ int mbus_is_primary_address(int value) {
 int mbus_send_frame(mbus_handle * handle, mbus_frame *frame) {
     if (handle == NULL)
     {
-        MBUS_ERROR("%s: Invalid M-Bus handle for send.\n", __PRETTY_FUNCTION__);
+        printf("Invalid M-Bus handle for send.\n");
         return 0;
     }
     return handle->send(handle, frame);
@@ -502,6 +649,10 @@ finish up mbus_recv_frame() and mbus_send_ping_frame()
 
 
 
+
+
+
+
 //main function
 int mbus_contiki_scan(int baudrate) {
   mbus_handle *handle;
@@ -509,7 +660,7 @@ int mbus_contiki_scan(int baudrate) {
   //int *device;
   //device = RS232_PORT_1;
   int address, retries = 0;
-  int baudrate = 9600;
+  //int baudrate = 9600;
   int ret;
 
   if ((handle = mbus_context_serial(device)) == NULL)
@@ -561,4 +712,10 @@ int mbus_contiki_scan(int baudrate) {
     mbus_disconnect(handle);
     mbus_context_free(handle);
     return 0;
+}
+
+
+int main(int argc, char **argv) {
+  mbus_contiki_scan(argv[1]);
+  return 0;
 }
