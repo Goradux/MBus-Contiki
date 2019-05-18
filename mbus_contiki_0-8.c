@@ -8,6 +8,7 @@
 #include <math.h>
 
 #include <time.h>
+#include <stdlib.h>
 
 
 
@@ -23,6 +24,13 @@
 #define MBUS_FRAME_CONTROL_START 0x68
 #define MBUS_FRAME_LONG_START    0x68
 #define MBUS_FRAME_STOP          0x16
+
+
+
+#define MBUS_FRAME_ACK_BASE_SIZE        1
+#define MBUS_FRAME_SHORT_BASE_SIZE      5
+#define MBUS_FRAME_CONTROL_BASE_SIZE    9
+#define MBUS_FRAME_LONG_BASE_SIZE       9
 
 
 
@@ -70,6 +78,10 @@
 
 
 
+#define MBUS_HANDLE_TYPE_SERIAL 1
+
+
+
 typedef struct _mbus_frame {
 
     u_char start1;
@@ -101,7 +113,8 @@ typedef struct _mbus_serial_handle {
     //int *device;
     // ^^^ RS232_PORT_1
 
-    //int fd;
+    int fd;
+    // ^^^ comment out later
 
     //struct termios t;
     // ^^^ baudrate
@@ -153,7 +166,7 @@ mbus_connect_serial(const char * device)
     mbus_serial_handle * serial_handle;
     if ((serial_handle = mbus_serial_connect((char*)device)) == NULL)
     {
-        printf("Failed to setup serial connection to M-bus gateway on %s.\n");
+        printf("Failed to setup serial connection to M-bus gateway on ???.\n");
         return NULL;
     }
 
@@ -769,11 +782,6 @@ int contiki_mbus_serial_scan() {
 
   ret = mbus_recv_frame(handle, &reply);
 
-  if (ret == -1)
-  {
-      continue;
-  }
-
 
   if (ret == -2)
   {
@@ -782,7 +790,6 @@ int contiki_mbus_serial_scan() {
 
       printf("Collision at address.\n");
 
-      continue;
   }
 
   if (mbus_frame_type(&reply) == MBUS_FRAME_TYPE_ACK)
@@ -797,7 +804,6 @@ int contiki_mbus_serial_scan() {
       {
           printf("Collision at address.\n");
 
-          continue;
       }
 
       printf("Found a M-Bus device at address.\n");
