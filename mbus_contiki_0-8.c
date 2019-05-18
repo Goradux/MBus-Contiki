@@ -729,6 +729,63 @@ mbus_recv_frame(mbus_handle * handle, mbus_frame *frame)
 
 
 
+int
+mbus_serial_disconnect(mbus_serial_handle *handle)
+{
+    if (handle == NULL)
+    {
+        return -1;
+    }
+
+    close(handle->fd);
+    // ^^^ ???
+
+    free(handle);
+
+    return 0;
+}
+
+int
+mbus_disconnect(mbus_handle * handle)
+{
+    if (handle == NULL)
+    {
+        printf("Invalid M-Bus handle for disconnect.\n");
+        return 0;
+    }
+
+    if (handle->is_serial)
+    {
+        mbus_serial_disconnect(handle->m_serial_handle);
+        handle->m_serial_handle = NULL;
+    }
+
+    free(handle);
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -810,5 +867,10 @@ int contiki_mbus_serial_scan() {
   }
 
 
+  return 0;
+}
 
+int main(int argc, char **argv) {
+  contiki_mbus_serial_scan();
+  return 0;
 }
